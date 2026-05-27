@@ -9,7 +9,7 @@
 本项目不包含，也不建议添加：
 
 - AList / OpenList / abcd / 网盘聚合 / 文件中转
-- Proxy / VPN / Tunneling / 翻墙 / 流量转发
+- 流量代理 / VPN / Tunneling / 翻墙 / 流量转发
 - Nezha 探针、sing-box、Hysteria、VMess、SOCKS
 - 高频保活、批量账号保号、隐藏进程名、随机二进制名
 - 与网站、邮件、Git 仓库无关的长驻服务
@@ -21,7 +21,7 @@
 - 创建 PHP 站点模板
 - 创建 Node.js HTTP 应用模板
 - 创建 Python HTTP 应用模板
-- 使用 Serv00 `devil` 工具创建网站
+- 使用 Serv00 `devil` 工具创建网站（Node/Python 会使用 Serv00 官方网站类型里的本地反代能力，仅用于普通 Web 应用）
 - 可选申请 Let's Encrypt 证书
 - 查看站点状态、日志路径和项目目录
 - 为 Node/Python 应用生成**低频**健康检查 cron（默认 30 分钟）

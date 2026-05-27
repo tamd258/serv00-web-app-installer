@@ -135,9 +135,9 @@ const http = require('http');
 const port = Number(process.env.PORT || '$port');
 const server = http.createServer((req, res) => {
   res.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
-  res.end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>$name</title></head><body style="font-family:system-ui,sans-serif;max-width:760px;margin:64px auto;padding:0 20px;line-height:1.7"><h1>$name</h1><p>Node.js 应用正在运行。</p></body></html>`);
+  res.end('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>$name</title></head><body style="font-family:system-ui,sans-serif;max-width:760px;margin:64px auto;padding:0 20px;line-height:1.7"><h1>$name</h1><p>Node.js 应用正在运行。</p></body></html>');
 });
-server.listen(port, '127.0.0.1', () => console.log(`listening on 127.0.0.1:${port}`));
+server.listen(port, '127.0.0.1', () => console.log('listening on 127.0.0.1:' + port));
 EOF2
   cat > "$app_dir/start.sh" <<EOF2
 #!/bin/sh
