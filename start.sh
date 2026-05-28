@@ -507,7 +507,11 @@ port_menu(){
         ;;
       2)
         read -p "输入要删除的端口号: " dp
-        [ -n "$dp" ] && { devil port del tcp "$dp" 2>/dev/null || true; devil port del udp "$dp" 2>/dev/null || true; green "已删除 $dp"; }
+        if [ -n "$dp" ]; then
+          # 从列表中找到端口类型
+          ptype=$(devil port list 2>/dev/null | awk -v p="$dp" '$1==p{print $2; exit}')
+          [ -n "$ptype" ] && devil port del "$ptype" "$dp" 2>/dev/null && green "已删除 $dp" || red "未找到端口 $dp"
+        fi
         pause
         ;;
       3)
