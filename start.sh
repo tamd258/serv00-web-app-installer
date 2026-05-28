@@ -75,6 +75,13 @@ install_self(){
 exec "$INSTALL_DIR/start.sh" "\$@"
 EOF2
   chmod +x "$HOME/bin/swi"
+  # Ensure ~/bin is in PATH
+  for rc in "$HOME/.bashrc" "$HOME/.profile"; do
+    if [ -f "$rc" ] && ! grep -q '$HOME/bin' "$rc" 2>/dev/null; then
+      printf 'export PATH="$HOME/bin:$PATH"\n' >> "$rc"
+    fi
+  done
+  export PATH="$HOME/bin:$PATH"
   green "已安装/更新。重新登录后输入 swi 使用。"
 }
 
