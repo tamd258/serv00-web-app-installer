@@ -261,16 +261,37 @@ create_keepalive_app(){
 
   need python3
   mkdir -p "$app_dir"
-
-  # Copy keepalive script
   cp "$INSTALL_DIR/templates/keepalive/keepalive.py" "$app_dir/keepalive.py"
 
-  # Copy default config if not exists
-  if [ ! -f "$app_dir/api_keys.json" ]; then
-    cp "$INSTALL_DIR/templates/keepalive/api_keys.json" "$app_dir/api_keys.json"
-  fi
+  # Interactive API config
+  blue "配置保活 API"
+  read -p "几个 API 需要保活？ [0]: " apicount
+  apicount=${apicount:-0}
 
-  # Create a minimal Flask app for status page
+  if [ "$apicount" -gt 0 ] 2>/dev/null; then
+    apis_json='"apis": ['
+    i=1
+    while [ "$i" -le "$apicount" ]; do
+      echo ""
+      blue "--- API $i ---"
+      read -p "  名称: " apiname
+      read -p "  URL: " apiurl
+      read -p "  方法 [POST]: " apimethod; apimethod=${apimethod:-POST}
+      read -p "  密钥环境变量 [如 ZO_API_KEY]: " apikeyvar
+      [ "$i" -gt 1 ] && apis_json="$apis_json,"
+      apis_json="$apis_json
+    {\"name\":\"$apiname\",\"url\":\"$apiurl\",\"headers\":{\"authorization\":\"\$apikeyvar\",\"content-type\":\"application/json\"},\"payload\":{\"input\":\"ping\"},\"method\":\"$apimethod\",\"timeout\":30}"
+      i=$((i + 1))
+    done
+    apis_json="$apis_json]"
+    printf '{\n%s\n}\n' "$apis_json" > "$app_dir/api_keys.json"
+  else
+    echo '{"apis":[]}' > "$app_dir/api_keys.json"
+    yellow "跳过 API 配置，可稍后编辑 $app_dir/api_keys.json"
+  fi
+  green "配置已保存"
+
+  # Flask status page
   cat > "$app_dir/app.py" <<EOF3
 from flask import Flask, jsonify
 import subprocess, sys, os
@@ -340,9 +361,6 @@ EOF3
 
   install_healthcheck "$name" "$app_dir/start.sh" "http://127.0.0.1:$port/healthz"
   print_result "$name" "$domain" "$app_dir" "$port"
-
-  blue "API 密钥请在 $app_dir/api_keys.json 中配置。"
-  blue "密钥使用环境变量读取（\$VAR 语法），在 Serv00 面板设置环境变量即可。"
 }
 
 install_healthcheck(){
