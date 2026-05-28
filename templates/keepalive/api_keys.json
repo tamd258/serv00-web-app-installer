@@ -1,0 +1,44 @@
+{
+  "apis": [
+    {
+      "name": "Zo Computer",
+      "url": "https://api.zo.computer/zo/ask",
+      "headers": {
+        "authorization": "$ZO_API_KEY",
+        "content-type": "application/json"
+      },
+      "payload": {"input": "ping"},
+      "method": "POST",
+      "timeout": 30
+    },
+    {
+      "name": "OpenAI",
+      "url": "https://api.openai.com/v1/models",
+      "headers": {
+        "authorization": "Bearer $OPENAI_API_KEY"
+      },
+      "method": "GET"
+    },
+    {
+      "name": "Claude",
+      "url": "https://api.anthropic.com/v1/messages",
+      "headers": {
+        "x-api-key": "$CLAUDE_API_KEY",
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+      },
+      "payload": {
+        "model": "claude-3-haiku-20240307",
+        "max_tokens": 10,
+        "messages": [{"role": "user", "content": "ping"}]
+      },
+      "method": "POST"
+    },
+    {
+      "name": "Gemini",
+      "url": "https://generativelanguage.googleapis.com/v1/models?key=$GEMINI_API_KEY",
+      "headers": {},
+      "method": "GET"
+    }
+  ]
+}

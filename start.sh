@@ -63,10 +63,12 @@ user_domain(){
 
 install_self(){
   need curl
-  mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/scripts" "$INSTALL_DIR/templates/python" "$HOME/bin"
+  mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/scripts" "$INSTALL_DIR/templates/python" "$INSTALL_DIR/templates/keepalive" "$HOME/bin"
   curl -fsSL "$RAW_BASE/start.sh" -o "$INSTALL_DIR/start.sh"
   curl -fsSL "$RAW_BASE/scripts/healthcheck.sh" -o "$INSTALL_DIR/scripts/healthcheck.sh" || true
   curl -fsSL "$RAW_BASE/templates/python/app.py" -o "$INSTALL_DIR/templates/python/app.py" || true
+  curl -fsSL "$RAW_BASE/templates/keepalive/keepalive.py" -o "$INSTALL_DIR/templates/keepalive/keepalive.py" || true
+  curl -fsSL "$RAW_BASE/templates/keepalive/api_keys.json" -o "$INSTALL_DIR/templates/keepalive/api_keys.json" || true
   chmod +x "$INSTALL_DIR/start.sh"
   cat > "$HOME/bin/swi" <<EOF2
 #!/bin/sh
@@ -244,6 +246,98 @@ EOF2
   print_result "$name" "$domain" "$app_dir" "$port"
 }
 
+create_keepalive_app(){
+  name="$1"
+  domain="${2:-$(user_domain "$name")}"
+  app_dir="$APP_ROOT/$name"
+  port="$(allocate_port 8000)"
+
+  need python3
+  mkdir -p "$app_dir"
+
+  # Copy keepalive script
+  cp "$INSTALL_DIR/templates/keepalive/keepalive.py" "$app_dir/keepalive.py"
+
+  # Copy default config if not exists
+  if [ ! -f "$app_dir/api_keys.json" ]; then
+    cp "$INSTALL_DIR/templates/keepalive/api_keys.json" "$app_dir/api_keys.json"
+  fi
+
+  # Create a minimal Flask app for status page
+  cat > "$app_dir/app.py" <<EOF3
+from flask import Flask, jsonify
+import subprocess, sys, os
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return '<h1>API 保活</h1><p><a href="/run">手动执行</a> | <a href="/log">查看日志</a></p>'
+
+@app.route('/healthz')
+def healthz():
+    return jsonify({"status":"ok"})
+
+@app.route('/run')
+def run():
+    try:
+        r = subprocess.run([sys.executable, 'keepalive.py'], capture_output=True, text=True,
+                          cwd='$app_dir', timeout=120,
+                          env={**os.environ, 'API_KEYS_CONFIG': '$app_dir/api_keys.json'})
+        return '<pre>' + r.stdout + '</pre>', 200
+    except Exception as e:
+        return f'<pre>Error: {e}</pre>', 500
+
+@app.route('/log')
+def log():
+    try:
+        with open('$app_dir/keepalive.log', 'r') as f:
+            lines = f.readlines()[-80:]
+        return '<pre>' + ''.join(lines) + '</pre>'
+    except:
+        return '<pre>暂无日志</pre>'
+
+if __name__ == '__main__':
+    app.run(host='127.0.0.1', port=$port)
+EOF3
+
+  # start.sh: runs both Flask status page and cron-driven keepalive
+  cat > "$app_dir/start.sh" <<EOF3
+#!/bin/sh
+cd "$app_dir"
+if ! pgrep -f "python3 app.py" >/dev/null 2>&1; then
+  PORT="$port" nohup python3 app.py >> app.log 2>&1 &
+fi
+EOF3
+  cat > "$app_dir/stop.sh" <<EOF3
+#!/bin/sh
+pkill -f "python3 app.py" >/dev/null 2>&1 || true
+EOF3
+  chmod +x "$app_dir/start.sh" "$app_dir/stop.sh"
+
+  # Install pip deps if needed
+  python3 -m pip install --user flask requests >/dev/null 2>&1 || true
+
+  "$app_dir/start.sh"
+  create_website "$domain" proxy "127.0.0.1:$port"
+
+  # Set up cron for periodic keepalive
+  normalize_interval
+  if command -v crontab >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    crontab -l 2>/dev/null | grep -v "keepalive.py" > "$tmp" || true
+    printf '*/%s * * * * cd %s && python3 keepalive.py >> keepalive.log 2>&1\n' "$HEALTH_INTERVAL" "$app_dir" >> "$tmp"
+    crontab "$tmp"
+    rm -f "$tmp"
+    yellow "已添加保活 cron：每 $HEALTH_INTERVAL 分钟。"
+  fi
+
+  install_healthcheck "$name" "$app_dir/start.sh" "http://127.0.0.1:$port/healthz"
+  print_result "$name" "$domain" "$app_dir" "$port"
+
+  blue "API 密钥请在 $app_dir/api_keys.json 中配置。"
+  blue "密钥使用环境变量读取（\$VAR 语法），在 Serv00 面板设置环境变量即可。"
+}
+
 install_healthcheck(){
   name="$1"
   start_cmd="$2"
@@ -283,7 +377,8 @@ create_app(){
     php) create_static_or_php_site php "$name" "$domain" ;;
     node) create_node_app "$name" "$domain" ;;
     python) create_python_app "$name" "$domain" ;;
-    *) red "类型只支持 static/php/node/python"; exit 1 ;;
+    keepalive) create_keepalive_app "$name" "$domain" ;;
+    *) red "类型只支持 static/php/node/python/keepalive"; exit 1 ;;
   esac
 }
 
@@ -315,6 +410,7 @@ quick_create(){
     php) title="PHP 站点"; prefix="php" ;;
     node) title="Node.js 应用"; prefix="node" ;;
     python) title="Python 应用"; prefix="py" ;;
+    keepalive) title="API 保活应用"; prefix="kp" ;;
     *) red "未知类型"; return ;;
   esac
   blue "创建 $title"
@@ -406,9 +502,10 @@ menu(){
     echo "3. 创建 PHP 站点"
     echo "4. 创建 Node.js Web 应用"
     echo "5. 创建 Python Web 应用"
-    echo "6. 管理已有 Node/Python 应用"
-    echo "7. 查看状态 / 网站 / 端口 / cron"
-    echo "8. 安装或更新本工具到 ~/bin/swi"
+    echo "6. 创建 API 保活应用"
+    echo "7. 管理已有应用"
+    echo "8. 查看状态 / 网站 / 端口 / cron"
+    echo "9. 安装或更新本工具到 ~/bin/swi"
     echo "0. 退出"
     printf "请选择: "; read n || exit 0
     case "$n" in
@@ -417,9 +514,10 @@ menu(){
       3) quick_create php; pause ;;
       4) quick_create node; pause ;;
       5) quick_create python; pause ;;
-      6) manage_app; pause ;;
-      7) show_status; pause ;;
-      8) install_self; pause ;;
+      6) quick_create keepalive; pause ;;
+      7) manage_app; pause ;;
+      8) show_status; pause ;;
+      9) install_self; pause ;;
       0) exit 0 ;;
       *) red "无效选项" ;;
     esac
