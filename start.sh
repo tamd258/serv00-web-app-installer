@@ -109,7 +109,7 @@ allocate_port(){
     return
   fi
   if ensure_devil; then
-    port="$(devil port add tcp random 2>/dev/null | awk '/[0-9]+/ {print $NF; exit}')" || port=""
+    port="$(devil port add tcp random 2>/dev/null | grep -oE '[0-9]{4,6}' | head -1)" || port=""
     if [ -n "$port" ]; then
       printf '%s' "$port"
       return
