@@ -473,6 +473,58 @@ manage_app(){
   done
 }
 
+port_menu(){
+  while true; do
+    line
+    echo "端口管理"
+    line
+    if command -v devil >/dev/null 2>&1; then
+      devil port list 2>/dev/null || true
+    else
+      yellow "未检测到 devil 命令。"
+      return
+    fi
+    line
+    echo "1. 添加端口"
+    echo "2. 删除端口"
+    echo "3. 清除所有端口"
+    echo "0. 返回"
+    printf "请选择: "; read n || return
+    case "$n" in
+      1)
+        echo "端口类型: 1.tcp  2.udp"
+        read -p "请选择 [1]: " pt
+        case "$pt" in 2) ptype="udp" ;; *) ptype="tcp" ;; esac
+        read -p "端口备注(可选): " note
+        if yes_default "自动分配端口" "Y"; then
+          result=$(devil port add "$ptype" random 2>/dev/null | grep -oE '[0-9]{4,6}' | head -1)
+          [ -n "$result" ] && green "已分配: $result" || red "分配失败"
+        else
+          read -p "输入端口号: " mp
+          devil port add "$ptype" "$mp" "$note" 2>/dev/null && green "已添加" || red "添加失败"
+        fi
+        pause
+        ;;
+      2)
+        read -p "输入要删除的端口号: " dp
+        [ -n "$dp" ] && { devil port del tcp "$dp" 2>/dev/null; devil port del udp "$dp" 2>/dev/null; green "已删除 $dp"; }
+        pause
+        ;;
+      3)
+        if yes_default "确认删除所有端口" "N"; then
+          devil port list 2>/dev/null | awk 'NR>1{print $2,$1}' | while read typ port; do
+            devil port del "$typ" "$port" 2>/dev/null
+          done
+          green "已清除"
+        fi
+        pause
+        ;;
+      0) return ;;
+      *) red "无效选项" ;;
+    esac
+  done
+}
+
 show_status(){
   line
   echo "安装目录: $INSTALL_DIR"
@@ -511,8 +563,9 @@ menu(){
     echo "5. 创建 Python Web 应用"
     echo "6. 创建 API 保活应用"
     echo "7. 管理已有应用"
-    echo "8. 查看状态 / 网站 / 端口 / cron"
-    echo "9. 安装或更新本工具到 ~/bin/swi"
+    echo "8. 端口管理（增/删/查看）"
+    echo "9. 查看状态 / 网站 / 端口 / cron"
+    echo "10. 安装或更新本工具到 ~/bin/swi"
     echo "0. 退出"
     printf "请选择: "; read n || exit 0
     case "$n" in
@@ -523,8 +576,9 @@ menu(){
       5) quick_create python; pause ;;
       6) quick_create keepalive; pause ;;
       7) manage_app; pause ;;
-      8) show_status; pause ;;
-      9) install_self; pause ;;
+      8) port_menu; pause ;;
+      9) show_status; pause ;;
+      10) install_self; pause ;;
       0) exit 0 ;;
       *) red "无效选项" ;;
     esac
