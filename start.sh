@@ -457,7 +457,7 @@ one_click(){
 list_local_apps(){
   echo "应用目录: $APP_ROOT"
   if [ -d "$APP_ROOT" ]; then
-    find "$APP_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort || true
+    ls -1 "$APP_ROOT" 2>/dev/null || true
   fi
 }
 
