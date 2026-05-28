@@ -117,6 +117,18 @@ SWI_PORT=3000                   # 可选：手动指定 Node/Python 本地端口
 - PHP 小网站
 - Node/Python 学习项目、小 API
 - Webhook 接收页、小工具页面
+- Python 配置读取页：可读取 `api_keys.json`、`api_keys.yml/.yaml` 或纯文本 key 列表，并通过 `API_KEYS_CONFIG` 指定路径
+
+### Python 应用增强
+
+Python 模板现在支持一个轻量配置模式：
+
+- 默认读取应用目录下的 `api_keys.json`
+- 也可通过 `API_KEYS_CONFIG` 指向任意 JSON / YAML / 纯文本配置文件
+- 页面会显示 key 数量与 `model_name`
+- 提供 `/api/config` 返回配置摘要，`/healthz` 作为健康检查端点
+
+如果你使用 YAML，Serv00 上请先在虚拟环境里安装 `pyyaml`。
 
 ## 许可
 

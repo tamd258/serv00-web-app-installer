@@ -63,9 +63,10 @@ user_domain(){
 
 install_self(){
   need curl
-  mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/scripts" "$HOME/bin"
+  mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/scripts" "$INSTALL_DIR/templates/python" "$HOME/bin"
   curl -fsSL "$RAW_BASE/start.sh" -o "$INSTALL_DIR/start.sh"
   curl -fsSL "$RAW_BASE/scripts/healthcheck.sh" -o "$INSTALL_DIR/scripts/healthcheck.sh" || true
+  curl -fsSL "$RAW_BASE/templates/python/app.py" -o "$INSTALL_DIR/templates/python/app.py" || true
   chmod +x "$INSTALL_DIR/start.sh"
   cat > "$HOME/bin/swi" <<EOF2
 #!/bin/sh
@@ -217,37 +218,29 @@ create_python_app(){
 
   need python3
   mkdir -p "$app_dir"
-  cat > "$app_dir/app.py" <<EOF2
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import os
-
-PORT = int(os.environ.get('PORT', '$port'))
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        body = '''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>$name</title></head><body style="font-family:system-ui,sans-serif;max-width:760px;margin:64px auto;padding:0 20px;line-height:1.7"><h1>$name</h1><p>Python 应用正在运行。</p></body></html>'''.encode()
-        self.send_response(200)
-        self.send_header('content-type', 'text/html; charset=utf-8')
-        self.send_header('content-length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-HTTPServer(('127.0.0.1', PORT), Handler).serve_forever()
-EOF2
+  cp "$INSTALL_DIR/templates/python/app.py" "$app_dir/app.py"
   cat > "$app_dir/start.sh" <<EOF2
 #!/bin/sh
 cd "$app_dir"
 if pgrep -f "python3 app.py" >/dev/null 2>&1; then exit 0; fi
-PORT="$port" nohup python3 app.py >> app.log 2>&1 &
+PORT="$port" APP_NAME="$name" API_KEYS_CONFIG="$app_dir/api_keys.json" nohup python3 app.py >> app.log 2>&1 &
 EOF2
   cat > "$app_dir/stop.sh" <<EOF2
 #!/bin/sh
 pkill -f "python3 app.py" >/dev/null 2>&1 || true
 EOF2
   chmod +x "$app_dir/start.sh" "$app_dir/stop.sh"
+  if [ ! -f "$app_dir/api_keys.json" ]; then
+    cat > "$app_dir/api_keys.json" <<EOF2
+{
+  "api_keys": [],
+  "model_name": ""
+}
+EOF2
+  fi
   "$app_dir/start.sh"
   create_website "$domain" proxy "127.0.0.1:$port"
-  install_healthcheck "$name" "$app_dir/start.sh" "http://127.0.0.1:$port/"
+  install_healthcheck "$name" "$app_dir/start.sh" "http://127.0.0.1:$port/healthz"
   print_result "$name" "$domain" "$app_dir" "$port"
 }
 
