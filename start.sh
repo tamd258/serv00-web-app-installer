@@ -5,14 +5,45 @@ APP_NAME="serv00-web-app-installer"
 INSTALL_DIR="${SWI_INSTALL_DIR:-$HOME/serv00-web-app-installer}"
 APP_ROOT="${SWI_ROOT:-$HOME/apps}"
 PUBLIC_ROOT="${SWI_PUBLIC_ROOT:-$HOME/domains}"
-RAW_BASE="${SWI_RAW_BASE:-https://raw.githubusercontent.com/YOUR_NAME/serv00-web-app-installer/main}"
+RAW_BASE="${SWI_RAW_BASE:-https://raw.githubusercontent.com/tamd258/serv00-web-app-installer/main}"
 AUTO_SSL="${SWI_AUTO_SSL:-1}"
 HEALTH_INTERVAL="${SWI_HEALTH_INTERVAL:-30}"
 
 red(){ printf '\033[0;91m%s\033[0m\n' "$1"; }
 green(){ printf '\033[0;92m%s\033[0m\n' "$1"; }
 yellow(){ printf '\033[0;33m%s\033[0m\n' "$1"; }
+blue(){ printf '\033[0;94m%s\033[0m\n' "$1"; }
+line(){ printf '%s\n' '----------------------------------------'; }
 need(){ command -v "$1" >/dev/null 2>&1 || { red "缺少命令: $1"; exit 1; }; }
+
+pause(){
+  printf "按回车继续..."
+  read _ || true
+}
+
+ask(){
+  prompt="$1"
+  default="$2"
+  printf "%s" "$prompt" >&2
+  if [ -n "$default" ]; then printf " [%s]" "$default" >&2; fi
+  printf ": " >&2
+  read answer || answer=""
+  if [ -z "$answer" ]; then answer="$default"; fi
+  printf '%s' "$answer"
+}
+
+yes_default(){
+  prompt="$1"
+  default="${2:-Y}"
+  if [ "$default" = "Y" ]; then suffix="Y/n"; else suffix="y/N"; fi
+  printf "%s [%s]: " "$prompt" "$suffix" >&2
+  read answer || answer=""
+  [ -z "$answer" ] && answer="$default"
+  case "$answer" in
+    y|Y|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 safe_name(){
   printf '%s' "$1" | grep -Eq '^[a-zA-Z0-9][a-zA-Z0-9_-]{1,40}$'
@@ -41,7 +72,7 @@ install_self(){
 exec "$INSTALL_DIR/start.sh" "\$@"
 EOF2
   chmod +x "$HOME/bin/swi"
-  green "已安装。重新登录后输入 swi 使用。"
+  green "已安装/更新。重新登录后输入 swi 使用。"
 }
 
 ensure_devil(){
@@ -58,6 +89,36 @@ try_ssl(){
   if ensure_devil; then
     yellow "尝试为 $domain 申请 Let's Encrypt 证书..."
     devil ssl www add "$domain" le le >/dev/null 2>&1 || yellow "SSL 申请未完成，可稍后在 Serv00 面板手动申请。"
+  fi
+}
+
+allocate_port(){
+  fallback="$1"
+  if [ -n "${SWI_PORT:-}" ]; then
+    printf '%s' "$SWI_PORT"
+    return
+  fi
+  if ensure_devil; then
+    port="$(devil port add tcp random 2>/dev/null | awk '/[0-9]+/ {print $NF; exit}')" || port=""
+    if [ -n "$port" ]; then
+      printf '%s' "$port"
+      return
+    fi
+  fi
+  printf '%s' "$fallback"
+}
+
+create_website(){
+  domain="$1"
+  mode="$2"
+  target="$3"
+  if ensure_devil; then
+    if [ "$mode" = "php" ]; then
+      devil www add "$domain" php "$target" >/dev/null 2>&1 || yellow "网站可能已存在或创建失败，请在面板检查：$domain"
+    else
+      devil www add "$domain" proxy "$target" >/dev/null 2>&1 || yellow "本地反代网站可能已存在或创建失败，请在面板检查：$domain"
+    fi
+    try_ssl "$domain"
   fi
 }
 
@@ -79,12 +140,14 @@ header('Content-Type: text/html; charset=utf-8');
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>$name</title>
-  <style>body{font-family:system-ui,sans-serif;max-width:760px;margin:64px auto;padding:0 20px;line-height:1.7}</style>
+  <style>body{font-family:system-ui,sans-serif;max-width:760px;margin:64px auto;padding:0 20px;line-height:1.7}.card{padding:20px;border:1px solid #ddd;border-radius:12px}</style>
 </head>
 <body>
-  <h1>$name</h1>
-  <p>PHP 站点已创建。</p>
-  <p>当前时间：<?php echo date('Y-m-d H:i:s'); ?></p>
+  <div class="card">
+    <h1>$name</h1>
+    <p>PHP 站点已创建。</p>
+    <p>当前时间：<?php echo date('Y-m-d H:i:s'); ?></p>
+  </div>
 </body>
 </html>
 EOF2
@@ -96,40 +159,30 @@ EOF2
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>$name</title>
-  <style>body{font-family:system-ui,sans-serif;max-width:760px;margin:64px auto;padding:0 20px;line-height:1.7}</style>
+  <style>body{font-family:system-ui,sans-serif;max-width:760px;margin:64px auto;padding:0 20px;line-height:1.7}.card{padding:20px;border:1px solid #ddd;border-radius:12px}</style>
 </head>
 <body>
-  <h1>$name</h1>
-  <p>静态站点已创建。</p>
+  <div class="card">
+    <h1>$name</h1>
+    <p>静态站点已创建。</p>
+  </div>
 </body>
 </html>
 EOF2
   fi
 
-  if ensure_devil; then
-    devil www add "$domain" php "$target" >/dev/null 2>&1 || yellow "网站可能已存在或创建失败，请在面板检查：$domain"
-    try_ssl "$domain"
-  fi
-
-  green "站点已创建: https://$domain"
-  green "目录: $target"
+  create_website "$domain" php "$target"
+  print_result "$name" "$domain" "$target" ""
 }
 
 create_node_app(){
   name="$1"
   domain="${2:-$(user_domain "$name")}"
-  port="${SWI_PORT:-}"
   app_dir="$APP_ROOT/$name"
+  port="$(allocate_port 3000)"
 
   need node
   mkdir -p "$app_dir"
-  if [ -z "$port" ]; then
-    if ensure_devil; then
-      port="$(devil port add tcp random 2>/dev/null | awk '/[0-9]+/ {print $NF; exit}')"
-    fi
-    [ -n "$port" ] || port="3000"
-  fi
-
   cat > "$app_dir/server.js" <<EOF2
 const http = require('http');
 const port = Number(process.env.PORT || '$port');
@@ -142,35 +195,28 @@ EOF2
   cat > "$app_dir/start.sh" <<EOF2
 #!/bin/sh
 cd "$app_dir"
+if pgrep -f "node server.js" >/dev/null 2>&1; then exit 0; fi
 PORT="$port" nohup node server.js >> app.log 2>&1 &
 EOF2
-  chmod +x "$app_dir/start.sh"
+  cat > "$app_dir/stop.sh" <<EOF2
+#!/bin/sh
+pkill -f "node server.js" >/dev/null 2>&1 || true
+EOF2
+  chmod +x "$app_dir/start.sh" "$app_dir/stop.sh"
   "$app_dir/start.sh"
-
-  if ensure_devil; then
-    devil www add "$domain" proxy "127.0.0.1:$port" >/dev/null 2>&1 || yellow "proxy 网站可能已存在或创建失败，请在面板检查：$domain"
-    try_ssl "$domain"
-  fi
+  create_website "$domain" proxy "127.0.0.1:$port"
   install_healthcheck "$name" "$app_dir/start.sh" "http://127.0.0.1:$port/"
-  green "Node.js 应用已创建: https://$domain"
-  green "目录: $app_dir"
+  print_result "$name" "$domain" "$app_dir" "$port"
 }
 
 create_python_app(){
   name="$1"
   domain="${2:-$(user_domain "$name")}"
-  port="${SWI_PORT:-}"
   app_dir="$APP_ROOT/$name"
+  port="$(allocate_port 8000)"
 
   need python3
   mkdir -p "$app_dir"
-  if [ -z "$port" ]; then
-    if ensure_devil; then
-      port="$(devil port add tcp random 2>/dev/null | awk '/[0-9]+/ {print $NF; exit}')"
-    fi
-    [ -n "$port" ] || port="8000"
-  fi
-
   cat > "$app_dir/app.py" <<EOF2
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
@@ -191,18 +237,18 @@ EOF2
   cat > "$app_dir/start.sh" <<EOF2
 #!/bin/sh
 cd "$app_dir"
+if pgrep -f "python3 app.py" >/dev/null 2>&1; then exit 0; fi
 PORT="$port" nohup python3 app.py >> app.log 2>&1 &
 EOF2
-  chmod +x "$app_dir/start.sh"
+  cat > "$app_dir/stop.sh" <<EOF2
+#!/bin/sh
+pkill -f "python3 app.py" >/dev/null 2>&1 || true
+EOF2
+  chmod +x "$app_dir/start.sh" "$app_dir/stop.sh"
   "$app_dir/start.sh"
-
-  if ensure_devil; then
-    devil www add "$domain" proxy "127.0.0.1:$port" >/dev/null 2>&1 || yellow "proxy 网站可能已存在或创建失败，请在面板检查：$domain"
-    try_ssl "$domain"
-  fi
+  create_website "$domain" proxy "127.0.0.1:$port"
   install_healthcheck "$name" "$app_dir/start.sh" "http://127.0.0.1:$port/"
-  green "Python 应用已创建: https://$domain"
-  green "目录: $app_dir"
+  print_result "$name" "$domain" "$app_dir" "$port"
 }
 
 install_healthcheck(){
@@ -210,7 +256,7 @@ install_healthcheck(){
   start_cmd="$2"
   url="$3"
   normalize_interval
-  mkdir -p "$HOME/bin"
+  mkdir -p "$HOME/bin" "$APP_ROOT/$name"
   script="$HOME/bin/${name}_health.sh"
   cat > "$script" <<EOF2
 #!/bin/sh
@@ -248,46 +294,149 @@ create_app(){
   esac
 }
 
+print_result(){
+  name="$1"
+  domain="$2"
+  path="$3"
+  port="$4"
+  line
+  green "完成：$name"
+  green "访问：https://$domain"
+  green "目录：$path"
+  if [ -n "$port" ]; then green "本地端口：$port"; fi
+  line
+}
+
+pick_name(){
+  prefix="$1"
+  default="${prefix}$(date +%m%d%H%M)"
+  name="$(ask "项目名，直接回车自动生成" "$default")"
+  safe_name "$name" || { red "项目名不合法。"; exit 1; }
+  printf '%s' "$name"
+}
+
+quick_create(){
+  type="$1"
+  case "$type" in
+    static) title="静态站点"; prefix="site" ;;
+    php) title="PHP 站点"; prefix="php" ;;
+    node) title="Node.js 应用"; prefix="node" ;;
+    python) title="Python 应用"; prefix="py" ;;
+    *) red "未知类型"; return ;;
+  esac
+  blue "创建 $title"
+  name="$(pick_name "$prefix")"
+  default_domain="$(user_domain "$name")"
+  domain="$(ask "域名，直接回车使用默认域名" "$default_domain")"
+  if [ "$AUTO_SSL" = "1" ]; then
+    if yes_default "自动尝试申请 HTTPS 证书" "Y"; then AUTO_SSL=1; else AUTO_SSL=0; fi
+  fi
+  create_app "$type" "$name" "$domain"
+}
+
+one_click(){
+  blue "一键模式会创建一个静态站点，除项目名外都用默认值。"
+  name="$(pick_name site)"
+  create_app static "$name" ""
+}
+
+list_local_apps(){
+  echo "应用目录: $APP_ROOT"
+  if [ -d "$APP_ROOT" ]; then
+    find "$APP_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort || true
+  fi
+}
+
+manage_app(){
+  list_local_apps
+  name="$(ask "输入要管理的应用名" "")"
+  [ -n "$name" ] || return
+  app_dir="$APP_ROOT/$name"
+  if [ ! -d "$app_dir" ]; then red "未找到：$app_dir"; return; fi
+  while true; do
+    line
+    echo "管理应用：$name"
+    echo "1. 启动"
+    echo "2. 停止"
+    echo "3. 重启"
+    echo "4. 查看日志"
+    echo "5. 查看健康检查日志"
+    echo "6. 查看目录"
+    echo "0. 返回"
+    printf "请选择: "; read n || return
+    case "$n" in
+      1) [ -x "$app_dir/start.sh" ] && "$app_dir/start.sh" || yellow "这个应用没有启动脚本。" ;;
+      2) [ -x "$app_dir/stop.sh" ] && "$app_dir/stop.sh" || yellow "这个应用没有停止脚本。" ;;
+      3) [ -x "$app_dir/stop.sh" ] && "$app_dir/stop.sh" || true; [ -x "$app_dir/start.sh" ] && "$app_dir/start.sh" || yellow "这个应用没有启动脚本。" ;;
+      4) [ -f "$app_dir/app.log" ] && tail -80 "$app_dir/app.log" || yellow "暂无 app.log" ;;
+      5) [ -f "$app_dir/health.log" ] && tail -80 "$app_dir/health.log" || yellow "暂无 health.log" ;;
+      6) echo "$app_dir" ;;
+      0) return ;;
+      *) red "无效选项" ;;
+    esac
+  done
+}
+
 show_status(){
+  line
   echo "安装目录: $INSTALL_DIR"
   echo "应用目录: $APP_ROOT"
   echo "网站目录: $PUBLIC_ROOT"
-  command -v devil >/dev/null 2>&1 && devil www list || true
+  echo "健康检查间隔: $HEALTH_INTERVAL 分钟"
+  line
+  echo "本地应用:"
+  list_local_apps
+  if command -v devil >/dev/null 2>&1; then
+    line
+    echo "Serv00 网站列表:"
+    devil www list || true
+    line
+    echo "Serv00 端口列表:"
+    devil port list || true
+  else
+    yellow "未检测到 devil 命令。"
+  fi
+  if command -v crontab >/dev/null 2>&1; then
+    line
+    echo "本工具创建的 cron:"
+    crontab -l 2>/dev/null | grep '_health.sh' || true
+  fi
 }
 
 menu(){
   while true; do
-    echo ""
-    echo "== serv00-web-app-installer =="
-    echo "1. 创建静态站点"
-    echo "2. 创建 PHP 站点"
-    echo "3. 创建 Node.js 应用"
-    echo "4. 创建 Python 应用"
-    echo "5. 查看状态"
+    line
+    echo "serv00-web-app-installer"
+    line
+    echo "1. 一键创建默认静态站点（最适合小白）"
+    echo "2. 创建静态站点 HTML/CSS/JS"
+    echo "3. 创建 PHP 站点"
+    echo "4. 创建 Node.js Web 应用"
+    echo "5. 创建 Python Web 应用"
+    echo "6. 管理已有 Node/Python 应用"
+    echo "7. 查看状态 / 网站 / 端口 / cron"
+    echo "8. 安装或更新本工具到 ~/bin/swi"
     echo "0. 退出"
     printf "请选择: "; read n || exit 0
     case "$n" in
-      1) ask_create static ;;
-      2) ask_create php ;;
-      3) ask_create node ;;
-      4) ask_create python ;;
-      5) show_status ;;
+      1) one_click; pause ;;
+      2) quick_create static; pause ;;
+      3) quick_create php; pause ;;
+      4) quick_create node; pause ;;
+      5) quick_create python; pause ;;
+      6) manage_app; pause ;;
+      7) show_status; pause ;;
+      8) install_self; pause ;;
       0) exit 0 ;;
       *) red "无效选项" ;;
     esac
   done
 }
 
-ask_create(){
-  type="$1"
-  printf "项目名: "; read name || exit 0
-  printf "域名（留空使用 项目名.$USER.serv00.net）: "; read domain || true
-  create_app "$type" "$name" "${domain:-}"
-}
-
 case "${1:-}" in
   --install) install_self ;;
   --create) shift; create_app "${1:-}" "${2:-}" "${3:-}" ;;
   --status) show_status ;;
+  --manage) manage_app ;;
   *) menu ;;
 esac
