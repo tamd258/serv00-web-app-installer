@@ -263,33 +263,33 @@ create_keepalive_app(){
   mkdir -p "$app_dir"
   cp "$INSTALL_DIR/templates/keepalive/keepalive.py" "$app_dir/keepalive.py"
 
-  # Interactive API config
-  blue "配置保活 API"
-  read -p "几个 API 需要保活？ [0]: " apicount
-  apicount=${apicount:-0}
+  # Simple: just enter Zo Computer keys
+  blue "Zo Computer API 保活"
+  read -p "几个 key 需要保活？ [0]: " kc
+  kc=${kc:-0}
 
-  if [ "$apicount" -gt 0 ] 2>/dev/null; then
+  if [ "$kc" -gt 0 ] 2>/dev/null; then
+    envfile="$app_dir/.env_keepalive"
+    :> "$envfile"
     apis_json='"apis": ['
     i=1
-    while [ "$i" -le "$apicount" ]; do
-      echo ""
-      blue "--- API $i ---"
-      read -p "  名称: " apiname
-      read -p "  URL: " apiurl
-      read -p "  方法 [POST]: " apimethod; apimethod=${apimethod:-POST}
-      read -p "  密钥环境变量 [如 ZO_API_KEY]: " apikeyvar
+    while [ "$i" -le "$kc" ]; do
+      read -p "  密钥 $i: " keyval
+      varname="ZO_KEY_$i"
+      printf 'export %s="%s"\n' "$varname" "$keyval" >> "$envfile"
       [ "$i" -gt 1 ] && apis_json="$apis_json,"
       apis_json="$apis_json
-    {\"name\":\"$apiname\",\"url\":\"$apiurl\",\"headers\":{\"authorization\":\"\$apikeyvar\",\"content-type\":\"application/json\"},\"payload\":{\"input\":\"ping\"},\"method\":\"$apimethod\",\"timeout\":30}"
+    {\"name\":\"Zo-$i\",\"url\":\"https://api.zo.computer/zo/ask\",\"headers\":{\"authorization\":\"\$'$varname'\",\"content-type\":\"application/json\"},\"payload\":{\"input\":\"ping\"},\"method\":\"POST\",\"timeout\":30}"
       i=$((i + 1))
     done
     apis_json="$apis_json]"
     printf '{\n%s\n}\n' "$apis_json" > "$app_dir/api_keys.json"
+    green "已配置 $kc 个 key，密钥存在 $envfile"
   else
     echo '{"apis":[]}' > "$app_dir/api_keys.json"
-    yellow "跳过 API 配置，可稍后编辑 $app_dir/api_keys.json"
+    yellow "跳过，可稍后编辑。"
   fi
-  green "配置已保存"
+
 
   # Flask status page
   cat > "$app_dir/app.py" <<EOF3
@@ -476,6 +476,7 @@ manage_app(){
     echo "4. 查看日志"
     echo "5. 查看健康检查日志"
     echo "6. 查看目录"
+    echo "7. 删除此应用"
     echo "0. 返回"
     printf "请选择: "; read n || return
     case "$n" in
@@ -485,6 +486,14 @@ manage_app(){
       4) [ -f "$app_dir/app.log" ] && tail -80 "$app_dir/app.log" || yellow "暂无 app.log" ;;
       5) [ -f "$app_dir/health.log" ] && tail -80 "$app_dir/health.log" || yellow "暂无 health.log" ;;
       6) echo "$app_dir" ;;
+      7) if yes_default "确认删除 $name" "N"; then
+           pkill -f "$app_dir" 2>/dev/null || true
+           rm -rf "$app_dir" "$HOME/bin/${name}_health.sh" 2>/dev/null
+           crontab -l 2>/dev/null | grep -v "${name}_health\|keepalive.py.*$name" | crontab - 2>/dev/null || true
+           green "已删除 $name"
+           return
+         fi
+         ;;
       0) return ;;
       *) red "无效选项" ;;
     esac
