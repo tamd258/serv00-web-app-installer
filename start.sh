@@ -662,6 +662,42 @@ port_menu(){
   done
 }
 
+
+clean_all(){
+  if ! yes_default "⚠️  确认删除所有应用和网站？此操作不可恢复" "N"; then return; fi
+  if ! yes_default "再次确认" "N"; then return; fi
+
+  yellow "正在停止所有应用..."
+  if [ -d "$APP_ROOT" ]; then
+    find "$APP_ROOT" -name "stop.sh" -type f 2>/dev/null | while read s; do sh "$s" 2>/dev/null || true; done
+  fi
+  sleep 1
+
+  # Kill remaining processes
+  pkill -f "node server.js" 2>/dev/null || true
+  pkill -f "python3 app.py" 2>/dev/null || true
+
+  # Remove crons
+  if command -v crontab >/dev/null 2>&1; then
+    yellow "清除 cron..."
+    tmp="$(mktemp)"
+    crontab -l 2>/dev/null | grep -v "_health.sh\|keepalive.py" > "$tmp" 2>/dev/null || true
+    crontab "$tmp" 2>/dev/null || true
+    rm -f "$tmp"
+  fi
+
+  # Remove health scripts
+  rm -f "$HOME/bin"/*_health.sh 2>/dev/null || true
+
+  # Remove all apps
+  yellow "删除应用目录..."
+  rm -rf "$APP_ROOT" 2>/dev/null || true
+  rm -rf "$PUBLIC_ROOT" 2>/dev/null || true
+
+  green "已删除所有应用。"
+}
+
+
 show_status(){
   line
   echo "安装目录: $INSTALL_DIR"
@@ -704,6 +740,7 @@ menu(){
     echo "9. 端口管理（增/删/查看）"
     echo "10. 查看状态 / 网站 / 端口 / cron"
     echo "11. 安装或更新本工具到 ~/bin/swi"
+    echo "12. 删除所有应用（⚠️ 不可恢复）"
     echo "0. 退出"
     printf "请选择: "; read n || exit 0
     case "$n" in
@@ -718,6 +755,7 @@ menu(){
       9) port_menu; pause ;;
       10) show_status; pause ;;
       11) install_self; pause ;;
+      12) clean_all; pause ;;
       0) exit 0 ;;
       *) red "无效选项" ;;
     esac
