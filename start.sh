@@ -500,6 +500,112 @@ manage_app(){
   done
 }
 
+
+api_manage(){
+  list_local_apps
+  name="$(ask "输入保活应用名" "")"
+  [ -n "$name" ] || return
+  app_dir="$APP_ROOT/$name"
+  config="$app_dir/api_keys.json"
+  envfile="$app_dir/.env_keepalive"
+  if [ ! -f "$config" ]; then red "未找到 $config"; return; fi
+
+  while true; do
+    line
+    echo "API 管理: $name"
+    line
+    python3 -c "
+import json
+d=json.load(open('$config'))
+for i,a in enumerate(d.get('apis',[])):
+    print(f'{i+1}. {a[\"name\"]} | {a[\"method\"]} | {a[\"url\"]}')
+" 2>/dev/null || yellow "暂无 API"
+    line
+    echo "1. 添加 API"
+    echo "2. 修改密钥"
+    echo "3. 删除 API"
+    echo "0. 返回"
+    printf "请选择: "; read n || return
+    case "$n" in
+      1)
+        read -p "  名称: " nm
+        read -p "  URL: " url
+        read -p "  方法 [POST]: " mtd; mtd=${mtd:-POST}
+        read -p "  密钥: " key
+        python3 << PYADD
+import json
+d=json.load(open('$config'))
+idx=len(d.get('apis',[]))+1
+vname=f'ZO_KEY_{idx}'
+d.setdefault('apis',[]).append({
+  'name':'$nm','url':'$url',
+  'headers':{'authorization':f'\${vname}','content-type':'application/json'},
+  'payload':{'input':'ping'},'method':'$mtd','timeout':30
+})
+json.dump(d,open('$config','w'),indent=2)
+with open('$envfile','a') as f:
+    f.write(f'export {vname}={chr(34)}$key{chr(34)}\n')
+print(f'added {vname}')
+PYADD
+        green "已添加"
+        ;;
+      2)
+        python3 -c "
+import json
+d=json.load(open('$config'))
+for i,a in enumerate(d.get('apis',[])):
+    k=a.get('headers',{}).get('authorization','?')
+    print(f'{i+1}. {a[\"name\"]} ({k})')
+" 2>/dev/null
+        read -p "  修改第几个？ " idx
+        read -p "  新密钥: " key
+        python3 << PYMOD
+import json
+d=json.load(open('$config'))
+i=int('$idx')-1
+old_k=d['apis'][i]['headers']['authorization'].replace('\$','')
+d['apis'][i]['headers']['authorization']='\$'+old_k
+json.dump(d,open('$config','w'),indent=2)
+# update env file
+lines=open('$envfile','r').readlines()
+with open('$envfile','w') as f:
+    for l in lines:
+        if old_k in l:
+            f.write(f'export {old_k}={chr(34)}$key{chr(34)}\n')
+        else:
+            f.write(l)
+PYMOD
+        green "已更新"
+        ;;
+      3)
+        python3 -c "
+import json
+d=json.load(open('$config'))
+for i,a in enumerate(d.get('apis',[])):
+    print(f'{i+1}. {a[\"name\"]}')
+" 2>/dev/null
+        read -p "  删除第几个？ " idx
+        python3 << PYDEL
+import json
+d=json.load(open('$config'))
+i=int('$idx')-1
+old_k=d['apis'][i]['headers']['authorization'].replace('\$','')
+del d['apis'][i]
+json.dump(d,open('$config','w'),indent=2)
+lines=open('$envfile','r').readlines()
+with open('$envfile','w') as f:
+    for l in lines:
+        if old_k not in l:
+            f.write(l)
+PYDEL
+        green "已删除"
+        ;;
+      0) return ;;
+      *) red "无效" ;;
+    esac
+  done
+}
+
 port_menu(){
   while true; do
     line
@@ -594,9 +700,10 @@ menu(){
     echo "5. 创建 Python Web 应用"
     echo "6. 创建 API 保活应用"
     echo "7. 管理已有应用"
-    echo "8. 端口管理（增/删/查看）"
-    echo "9. 查看状态 / 网站 / 端口 / cron"
-    echo "10. 安装或更新本工具到 ~/bin/swi"
+    echo "8. API 密钥管理（增/删/改）"
+    echo "9. 端口管理（增/删/查看）"
+    echo "10. 查看状态 / 网站 / 端口 / cron"
+    echo "11. 安装或更新本工具到 ~/bin/swi"
     echo "0. 退出"
     printf "请选择: "; read n || exit 0
     case "$n" in
@@ -607,9 +714,10 @@ menu(){
       5) quick_create python; pause ;;
       6) quick_create keepalive; pause ;;
       7) manage_app; pause ;;
-      8) port_menu; pause ;;
-      9) show_status; pause ;;
-      10) install_self; pause ;;
+      8) api_manage; pause ;;
+      9) port_menu; pause ;;
+      10) show_status; pause ;;
+      11) install_self; pause ;;
       0) exit 0 ;;
       *) red "无效选项" ;;
     esac
